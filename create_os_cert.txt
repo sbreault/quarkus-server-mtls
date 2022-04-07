@@ -1,0 +1,74 @@
+source:
+https://github.com/openlab-red/quarkus-mtls-quickstart/tree/master/deploy
+
+--these dir are shared with the client so only need to be created once
+mkdir tls
+cd tls
+mkdir ca
+mkdir server
+mkdir client
+
+(optional - if this is set in your cmd session you don't need command line -config args)
+set OPENSSL_CONF=C:/repos/GitHub/quarkus-server-mtls/tls/openssl.cnf
+
+
+CREATE CERTS
+---------------------------------
+
+--create CA
+openssl req -new -newkey rsa:2048 -x509 -keyout ca/ca.key -out ca/ca.crt -days 365 -subj /CN=mycompany.com -config C:/repos/GitHub/quarkus-server-mtls/tls/openssl.cnf
+
+--create truststore
+keytool -import -storepass password -file ca/ca.crt -alias mycompany.com -keystore ca/truststore
+
+--generate server key
+keytool -genkeypair -storepass password -keyalg RSA -keysize 2048 -dname "CN=server" -alias server -keystore server/server.keystore
+--generate server csr
+keytool -certreq -storepass password -keyalg rsa -alias server -keystore server/server.keystore -file server/server.csr
+
+--CA sign
+openssl x509 -req -CA ca/ca.crt -CAkey ca/ca.key -in server/server.csr -out server/server.crt -days 365 -CAcreateserial
+
+keytool -import -v -trustcacerts -alias root -file ca/ca.crt -keystore server/server.keystore
+keytool -import -v -trustcacerts -alias server -file server/server.crt -keystore server/server.keystore
+
+
+--verify cert chain
+keytool -list -v -keystore server/server.keystore
+
+--import server cert into truststore
+keytool -import -storepass password -file server/server.crt -alias server -keystore ca/truststore
+
+
+CREATE OS SECRETS
+---------------------------------
+--create server cert secret
+oc create secret generic quarkus-server-mtls --from-file=server
+
+--create truststore secret
+oc create secret generic quarkus-truststore-mtls --from-file=ca/truststore
+
+
+CREATE OS S2I BUILD
+---------------------------------
+--s2i JVM build
+oc new-build --name=server registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift~https://github.com/openlab-red/quarkus-mtls-quickstart --context-dir=/quarkus-server-mtls
+
+--or using native build
+oc new-build --name=server quay.io/quarkus/ubi-quarkus-native-s2i:19.3.1-java11~https://github.com/openlab-red/quarkus-mtls-quickstart --context-dir=/quarkus-server-mtls
+
+--limit build resources
+oc patch bc/server -p '{"spec":{"resources":{"limits":{"cpu":"800m","memory":"600Mi"}}}}'
+
+Note: if you get an error modifying the BuildConfig edit the resources node manually:
+
+```
+  resources:
+    limits:
+      cpu: 800m
+      memory: 600Mi
+
+
+DEPLOY OS OBJECTS
+---------------------------------
+(run yaml snippets from quarkus-server-mtls.yaml)
