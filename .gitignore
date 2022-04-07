@@ -1,3 +1,6 @@
+# OpenSSL
+tls/
+
 # Eclipse
 .project
 .classpath
@@ -15,6 +18,7 @@ nb-configuration.xml
 
 # Visual Studio Code
 .vscode
+.code-workspace
 
 # OSX
 .DS_Store
